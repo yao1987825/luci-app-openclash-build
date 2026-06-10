@@ -68,15 +68,14 @@ jobs:
         run: |
           set -e
           BASE="https://downloads.immortalwrt.org/releases/24.10-SNAPSHOT/targets/armsr/armv8"
-          SDK_FILE=$(curl -sL --connect-timeout 20 -m 60 "$BASE/" | grep -oE 'immortalwrt-sdk-24\.10-SNAPSHOT-armsr-armv8_gcc-12\.3\.0_musl\.Linux-x86_64\.tar\.xz' | head -1)
-          if [ -z "$SDK_FILE" ]; then
-            echo "No SDK filename detected; falling back to default"
-            SDK_FILE="immortalwrt-sdk-24.10-SNAPSHOT-armsr-armv8_gcc-12.3.0_musl.Linux-x86_64.tar.xz"
-          fi
+          SDK_FILE=$(curl -sL --connect-timeout 20 -m 60 "$BASE/" | grep -oE 'immortalwrt-sdk-24\.10-SNAPSHOT-armsr-armv8_gcc-13\.3\.0_musl\.Linux-x86_64\.tar\.zst' | head -1)
+          [ -z "$SDK_FILE" ] && SDK_FILE="immortalwrt-sdk-24.10-SNAPSHOT-armsr-armv8_gcc-13.3.0_musl.Linux-x86_64.tar.zst"
           echo "Downloading $SDK_FILE"
-          curl -SL --connect-timeout 30 --retry 3 -o "SDK.tar.xz" "$BASE/$SDK_FILE"
-          tar -xJf SDK.tar.xz
+          curl -fSL --connect-timeout 30 --retry 3 -o "SDK.tar.zst" "$BASE/$SDK_FILE"
+          zstd -d -f SDK.tar.zst -o SDK.tar
+          tar -xf SDK.tar
           mv immortalwrt-sdk-* SDK
+          rm SDK.tar
 
       - name: Download SDK (ImmortalWrt 23.05)
         if: ${{ inputs.target == 'immortalwrt-2305' }}
