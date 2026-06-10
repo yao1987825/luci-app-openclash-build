@@ -1,0 +1,147 @@
+name: Build luci-app-openclash ipk
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: "Target SDK"
+        required: true
+        type: choice
+        default: immortalwrt-2410
+        options:
+          - immortalwrt-2410
+          - immortalwrt-2305
+          - openwrt-2410
+      upload:
+        description: "Upload artifact to release"
+        type: boolean
+        default: false
+
+jobs:
+  probe-sdks:
+    name: Probe SDK sources
+    runs-on: ubuntu-latest
+    steps:
+      - name: Probe ImmortalWrt 24.10 SDK
+        run: |
+          echo "=== immortalwrt 24.10 SNAPSHOT armsr/armv8 ==="
+          curl -sIL --connect-timeout 15 -m 20 "https://downloads.immortalwrt.org/releases/24.10-SNAPSHOT/targets/armsr/armv8/" | head -3 || true
+          for f in $(curl -sL --connect-timeout 15 -m 30 "https://downloads.immortalwrt.org/releases/24.10-SNAPSHOT/targets/armsr/armv8/" | grep -oE 'immortalwrt-sdk-24\.10-SNAPSHOT-armsr-armv8_gcc-12\.3\.0_musl\.Linux-x86_64\.tar\.xz' | head -1); do
+            echo "FOUND: $f"
+          done
+
+      - name: Probe OpenWrt 24.10 SDK
+        run: |
+          echo "=== openwrt 24.10 SNAPSHOT armsr/armv8 ==="
+          curl -sIL --connect-timeout 15 -m 20 "https://downloads.openwrt.org/releases/24.10-SNAPSHOT/targets/armsr/armv8/" | head -3
+          for f in $(curl -sL --connect-timeout 15 -m 30 "https://downloads.openwrt.org/releases/24.10-SNAPSHOT/targets/armsr/armv8/" | grep -oE 'openwrt-sdk-24\.10-SNAPSHOT-armsr-armv8_gcc-13\.3\.0_musl\.Linux-x86_64\.tar\.zst' | head -1); do
+            echo "FOUND: $f"
+          done
+
+      - name: Probe ImmortalWrt 23.05 SDK
+        run: |
+          echo "=== immortalwrt 23.05 SNAPSHOT armsr/armv8 ==="
+          curl -sIL --connect-timeout 15 -m 20 "https://downloads.immortalwrt.org/releases/23.05-SNAPSHOT/targets/armsr/armv8/" | head -3
+
+  build:
+    name: Build (${{ inputs.target }})
+    needs: probe-sdks
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y zstd xz-utils
+
+      - name: Download SDK (ImmortalWrt 24.10)
+        if: ${{ inputs.target == 'immortalwrt-2410' }}
+        run: |
+          set -e
+          BASE="https://downloads.immortalwrt.org/releases/24.10-SNAPSHOT/targets/armsr/armv8"
+          SDK_FILE=$(curl -sL --connect-timeout 20 -m 60 "$BASE/" | grep -oE 'immortalwrt-sdk-24\.10-SNAPSHOT-armsr-armv8_gcc-12\.3\.0_musl\.Linux-x86_64\.tar\.xz' | head -1)
+          if [ -z "$SDK_FILE" ]; then
+            echo "No SDK filename detected; falling back to default"
+            SDK_FILE="immortalwrt-sdk-24.10-SNAPSHOT-armsr-armv8_gcc-12.3.0_musl.Linux-x86_64.tar.xz"
+          fi
+          echo "Downloading $SDK_FILE"
+          curl -SL --connect-timeout 30 --retry 3 -o "SDK.tar.xz" "$BASE/$SDK_FILE"
+          tar -xJf SDK.tar.xz
+          mv immortalwrt-sdk-* SDK
+
+      - name: Download SDK (ImmortalWrt 23.05)
+        if: ${{ inputs.target == 'immortalwrt-2305' }}
+        run: |
+          set -e
+          BASE="https://downloads.immortalwrt.org/releases/23.05-SNAPSHOT/targets/armsr/armv8"
+          SDK_FILE=$(curl -sL --connect-timeout 20 -m 60 "$BASE/" | grep -oE 'immortalwrt-sdk-23\.05-SNAPSHOT-armsr-armv8_gcc-12\.3\.0_musl\.Linux-x86_64\.tar\.xz' | head -1)
+          if [ -z "$SDK_FILE" ]; then
+            SDK_FILE="immortalwrt-sdk-23.05-SNAPSHOT-armsr-armv8_gcc-12.3.0_musl.Linux-x86_64.tar.xz"
+          fi
+          echo "Downloading $SDK_FILE"
+          curl -SL --connect-timeout 30 --retry 3 -o "SDK.tar.xz" "$BASE/$SDK_FILE"
+          tar -xJf SDK.tar.xz
+          mv immortalwrt-sdk-* SDK
+
+      - name: Download SDK (OpenWrt 24.10)
+        if: ${{ inputs.target == 'openwrt-2410' }}
+        run: |
+          set -e
+          BASE="https://downloads.openwrt.org/releases/24.10-SNAPSHOT/targets/armsr/armv8"
+          SDK_FILE=$(curl -sL --connect-timeout 20 -m 60 "$BASE/" | grep -oE 'openwrt-sdk-24\.10-SNAPSHOT-armsr-armv8_gcc-13\.3\.0_musl\.Linux-x86_64\.tar\.zst' | head -1)
+          if [ -z "$SDK_FILE" ]; then
+            SDK_FILE="openwrt-sdk-24.10-SNAPSHOT-armsr-armv8_gcc-13.3.0_musl.Linux-x86_64.tar.zst"
+          fi
+          echo "Downloading $SDK_FILE"
+          curl -SL --connect-timeout 30 --retry 3 -o "SDK.tar.zst" "$BASE/$SDK_FILE"
+          zstd -d SDK.tar.zst -o SDK.tar
+          tar -xf SDK.tar
+          mv openwrt-sdk-* SDK
+
+      - name: Copy OpenClash into SDK package
+        run: |
+          mkdir -p SDK/package/luci-app-openclash
+          cp -rf luci-app-openclash/. SDK/package/luci-app-openclash/
+          ls -la SDK/package/luci-app-openclash/
+
+      - name: Build package index
+        working-directory: SDK
+        run: |
+          ./scripts/feeds update -a
+          ./scripts/feeds install -a
+          echo "CONFIG_PACKAGE_luci-app-openclash=m" >> .config
+          echo "CONFIG_LUCI_LANG_zh-cn=y" >> .config
+          make defconfig
+
+      - name: Compile package
+        working-directory: SDK
+        run: |
+          make package/luci-app-openclash/compile V=s -j$(nproc) 2>&1 | tail -200
+
+      - name: Collect ipk
+        run: |
+          mkdir -p out
+          find SDK/bin/packages -name 'luci-app-openclash_*.ipk' -exec cp -v {} out/ \;
+          ls -la out/
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: luci-app-openclash-ipk-${{ inputs.target }}
+          path: out/*.ipk
+
+      - name: Upload to release
+        if: ${{ inputs.upload }}
+        uses: softprops/action-gh-release@v2
+        with:
+          files: out/*.ipk
+          generate_release_notes: true
