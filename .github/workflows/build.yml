@@ -106,9 +106,20 @@ jobs:
 
       - name: Copy OpenClash into SDK package
         run: |
-          mkdir -p SDK/package/luci-app-openclash
-          cp -rf luci-app-openclash/. SDK/package/luci-app-openclash/
-          ls -la SDK/package/luci-app-openclash/
+          echo "PWD=$(pwd)"
+          echo "GITHUB_WORKSPACE=$GITHUB_WORKSPACE"
+          echo "--- ls top ---"
+          ls -la
+          echo "--- ls luci-app-openclash ---"
+          ls -la luci-app-openclash 2>&1 || true
+          if [ -d luci-app-openclash ]; then
+            mkdir -p SDK/package/luci-app-openclash
+            cp -rf luci-app-openclash/. SDK/package/luci-app-openclash/
+            ls -la SDK/package/luci-app-openclash/
+          else
+            echo "luci-app-openclash not found in $(pwd); abort"
+            exit 1
+          fi
 
       - name: Build package index
         working-directory: SDK
