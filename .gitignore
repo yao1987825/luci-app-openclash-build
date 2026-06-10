@@ -1,1 +1,5 @@
-luci-app-openclash/
+SDK/
+SDK.tar
+SDK.tar.zst
+SDK.tar.xz
+out/
