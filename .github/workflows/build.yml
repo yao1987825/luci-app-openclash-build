@@ -126,9 +126,12 @@ jobs:
         run: |
           ./scripts/feeds update -a
           ./scripts/feeds install -a
+          ./scripts/feeds install -p luci luci-libs
           echo "CONFIG_PACKAGE_luci-app-openclash=m" >> .config
           echo "CONFIG_LUCI_LANG_zh-cn=y" >> .config
           make defconfig
+          echo "--- host tools that should now exist ---"
+          ls -la staging_dir/host/bin/ 2>/dev/null | grep -E 'po2lmo|ipkg' | head -10
 
       - name: Compile package
         working-directory: SDK
