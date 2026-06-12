@@ -124,19 +124,26 @@ jobs:
       - name: Build package index
         working-directory: SDK
         run: |
+          set -e
           ./scripts/feeds update -a
           ./scripts/feeds install -a
-          ./scripts/feeds install -p luci luci-libs
+          ./scripts/feeds install -p luci luci-libs || true
           echo "CONFIG_PACKAGE_luci-app-openclash=m" >> .config
           echo "CONFIG_LUCI_LANG_zh-cn=y" >> .config
           make defconfig
-          echo "--- host tools that should now exist ---"
-          ls -la staging_dir/host/bin/ 2>/dev/null | grep -E 'po2lmo|ipkg' | head -10
+          echo "--- building host tools (po2lmo etc.) ---"
+          make -j$(nproc) tools/po2lmo/install 2>&1 | tail -30 || true
+          make -j$(nproc) package/luci-base/host-compile 2>&1 | tail -30 || true
+          echo "--- host tools present? ---"
+          find staging_dir/host -name 'po2lmo' -o -name 'ipkg-build' 2>/dev/null
+          which po2lmo || echo "po2lmo still missing"
+          ls -la staging_dir/host/bin/ 2>/dev/null | head
 
       - name: Compile package
         working-directory: SDK
         run: |
-          make package/luci-app-openclash/compile V=s -j$(nproc) 2>&1 | tail -200
+          set -o pipefail
+          make package/luci-app-openclash/compile V=s -j$(nproc) 2>&1 | tail -300
 
       - name: Collect ipk
         run: |
